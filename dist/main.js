@@ -33,20 +33,24 @@ function exportToCsv(filename, rows) {
         document.body.removeChild(link);
     }
 }
-window.members_list = window.members_list || [[
-        'Profile Id',
-        'Full Name',
-        'ProfileLink',
-        'Bio',
-        'Image Src',
-        'Groupe Id',
-        'Group Joining Text',
-        'Profile Type'
-    ]];
-// Add a Download button to export parsed member into a CSV file
+window.profiles_list = window.profiles_list || new Map();
+// [[
+//     'First Name',
+//     'Last Name',
+//     'Headline',
+//     'ProfileLink',
+//     // 'Full Name',
+//     // 'Title',
+//     // 'Location',
+//     // 'Profile Link',
+//     // 'Summary',
+//     // 'Is Premium',
+//     // 'Connection Degree'
+// ]]
+// Add a Download button to export parsed records into a CSV file
 function buildCTABtn() {
-    var canvas = document.createElement('div');
-    var canvasStyles = [
+    const canvas = document.createElement('div');
+    const canvasStyles = [
         'position: fixed;',
         'top: 0;',
         'left: 0;',
@@ -56,15 +60,15 @@ function buildCTABtn() {
         'pointer-events: none;'
     ];
     canvas.setAttribute('style', canvasStyles.join(''));
-    var btn = document.createElement('div');
-    var btnStyles = [
+    const btn = document.createElement('div');
+    const btnStyles = [
         'position: absolute;',
-        'bottom: 30px;',
+        'bottom: 80px;',
         'right: 130px;',
         'color: white;',
         'min-width: 150px;',
-        'background: var(--primary-button-background);',
-        'border-radius: var(--button-corner-radius);',
+        'background: blue;',
+        'border-radius: 8px',
         'padding: 0px 12px;',
         'cursor: pointer;',
         'font-weight:600;',
@@ -76,116 +80,276 @@ function buildCTABtn() {
         'justify-content: center;'
     ];
     btn.setAttribute('style', btnStyles.join(''));
-    var downloadText = document.createTextNode('Download\u00A0');
-    var numberSpan = document.createElement("span");
-    numberSpan.setAttribute('id', 'fb-group-scraper-number-tracker');
+    const downloadText = document.createTextNode('Download\u00A0');
+    const numberSpan = document.createElement("span");
+    numberSpan.setAttribute('id', 'linkedin-scraper-number-tracker');
     numberSpan.textContent = "0";
-    var memberText = document.createTextNode('\u00A0members');
+    const memberText = document.createTextNode('\u00A0members');
     btn.appendChild(downloadText);
     btn.appendChild(numberSpan);
     btn.appendChild(memberText);
     btn.addEventListener('click', function () {
-        var timestamp = new Date().toISOString();
-        exportToCsv("groupMemberExport-".concat(timestamp, ".csv"), window.members_list);
+        const timestamp = new Date().toISOString();
+        const profileToArray = [[
+                'Search Terms',
+                'LinkedInUrl',
+                'First Name',
+                'Last Name',
+                'Full Name',
+                'Title',
+                'Location',
+                'Is Premium',
+                'Summary'
+            ]];
+        function textOrEmpty(value) {
+            return value || '';
+        }
+        ;
+        window.profiles_list.forEach((profile, index) => {
+            // Only keep profile with a linkedIn profile URL
+            if (profile.linkedInProfileUrl) {
+                profileToArray.push([
+                    profile.searchTerm,
+                    profile.linkedInProfileUrl,
+                    textOrEmpty(profile.firstName),
+                    textOrEmpty(profile.lastName),
+                    textOrEmpty(profile.fullName),
+                    textOrEmpty(profile.title),
+                    textOrEmpty(profile.location),
+                    profile.isPremium ? 'True' : 'False',
+                    textOrEmpty(profile.summary)
+                ]);
+            }
+        });
+        exportToCsv(`linkedInProfilesExport-${timestamp}.csv`, profileToArray);
     });
     canvas.appendChild(btn);
     document.body.appendChild(canvas);
     return canvas;
 }
-function processResponse(dataGraphQL) {
-    var _a;
-    var _b, _c, _d, _e, _f, _g;
-    // Only look for Group GraphQL responses
-    var data;
-    if ((_b = dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.data) === null || _b === void 0 ? void 0 : _b.group) {
-        // Initial Group members page
-        data = dataGraphQL.data.group;
+function isProfile1(entity) {
+    return entity['$type'] === "com.linkedin.voyager.dash.search.EntityResultViewModel" &&
+        !!entity['navigationUrl'] && entity['navigationUrl'].indexOf('linkedin.com/in/') !== -1;
+}
+function isProfile2(entity) {
+    return entity['$type'] === "com.linkedin.voyager.dash.identity.profile.Profile";
+    //  &&  !!entity['publicIdentifier']
+}
+function cleanLinkedInUrl(sourceLinkedInUrl) {
+    const cleanedUrl = new URL(sourceLinkedInUrl);
+    cleanedUrl.search = '';
+    cleanedUrl.hash = '';
+    return cleanedUrl.toString();
+}
+function findProfileUsingFSDProfile(fsdProfile) {
+    for (let [key, value] of window.profiles_list.entries()) {
+        if (value.fsdProfile && value.fsdProfile === fsdProfile) {
+            return key;
+        }
     }
-    else if (((_d = (_c = dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.data) === null || _c === void 0 ? void 0 : _c.node) === null || _d === void 0 ? void 0 : _d.__typename) === 'Group') {
-        // New members load on scroll
-        data = dataGraphQL.data.node;
+    return null;
+}
+function processResponse(dataGraphQL, searchTerm) {
+    // Only look for Group GraphQL responses
+    let data;
+    if (dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.included) {
+        // Initial Group members page
+        data = dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.included;
     }
     else {
         // If no group members, return fast
         return;
     }
-    var membersEdges;
-    // Both are used (new_forum_members seems to be the new way)
-    if ((_e = data === null || data === void 0 ? void 0 : data.new_members) === null || _e === void 0 ? void 0 : _e.edges) {
-        membersEdges = data.new_members.edges;
-    }
-    else if ((_f = data === null || data === void 0 ? void 0 : data.new_forum_members) === null || _f === void 0 ? void 0 : _f.edges) {
-        membersEdges = data.new_forum_members.edges;
-    }
-    else if ((_g = data === null || data === void 0 ? void 0 : data.search_results) === null || _g === void 0 ? void 0 : _g.edges) {
-        membersEdges = data.search_results.edges;
-    }
-    else {
+    const profileObjs = data.filter((entity) => {
+        return isProfile1(entity) || isProfile2(entity);
+    });
+    if (profileObjs.length === 0) {
         return;
     }
-    var membersData = membersEdges.map(function (memberNode) {
+    function parseProfile1(profileNode) {
         var _a, _b, _c, _d;
-        // Member Data
-        var _e = memberNode.node, id = _e.id, name = _e.name, bio_text = _e.bio_text, url = _e.url, profile_picture = _e.profile_picture, profileType = _e.__isProfile;
-        // Group Joining Info
-        var joiningText = ((_a = memberNode === null || memberNode === void 0 ? void 0 : memberNode.join_status_text) === null || _a === void 0 ? void 0 : _a.text) || ((_c = (_b = memberNode === null || memberNode === void 0 ? void 0 : memberNode.membership) === null || _b === void 0 ? void 0 : _b.join_status_text) === null || _c === void 0 ? void 0 : _c.text);
-        // Facebook Group Id
-        var groupId = (_d = memberNode.node.group_membership) === null || _d === void 0 ? void 0 : _d.associated_group.id;
-        return [
-            id,
-            name,
-            url,
-            (bio_text === null || bio_text === void 0 ? void 0 : bio_text.text) || '',
-            (profile_picture === null || profile_picture === void 0 ? void 0 : profile_picture.uri) || '',
-            groupId,
-            joiningText || '',
-            profileType
-        ];
+        const profileLink = profileNode === null || profileNode === void 0 ? void 0 : profileNode.navigationUrl;
+        if (!profileLink) {
+            return null;
+        }
+        ;
+        const entityUrn = profileNode === null || profileNode === void 0 ? void 0 : profileNode.entityUrn;
+        let fsdProfile;
+        const regExResult = entityUrn.match(/fsd_profile:(?<profile>(\w+))/);
+        if (regExResult && regExResult.groups && regExResult.groups['profile']) {
+            fsdProfile = regExResult.groups['profile'];
+        }
+        if (!fsdProfile) {
+            return null;
+        }
+        // "urn:li:fsd_entityResultViewModel:(urn:li:fsd_profile:ACoAACbapPsBIXhvyKSmbAWi_6qcr0hu7HGHzqg,SEARCH_SRP,DEFAULT)"
+        const fullName = (_a = profileNode === null || profileNode === void 0 ? void 0 : profileNode.title) === null || _a === void 0 ? void 0 : _a.text;
+        const title = (_b = profileNode === null || profileNode === void 0 ? void 0 : profileNode.primarySubtitle) === null || _b === void 0 ? void 0 : _b.text;
+        const location = (_c = profileNode === null || profileNode === void 0 ? void 0 : profileNode.secondarySubtitle) === null || _c === void 0 ? void 0 : _c.text;
+        const summary = (_d = profileNode === null || profileNode === void 0 ? void 0 : profileNode.summary) === null || _d === void 0 ? void 0 : _d.text;
+        let isPremium = false;
+        if (profileNode === null || profileNode === void 0 ? void 0 : profileNode.badgeIcon) {
+            isPremium = true;
+        }
+        // // profileNode?.badgeIcon?.attributes[0]?.detailData?.icon.toLowerCase().indexOf('premium') !== -1;
+        // const connectionDegree = profileNode?.badgeText?.accessibilityText;
+        const toReturn = {
+            fsdProfile: fsdProfile,
+            linkedInProfileUrl: cleanLinkedInUrl(profileLink),
+            isPremium: isPremium
+        };
+        if (searchTerm) {
+            toReturn.searchTerm = searchTerm;
+        }
+        if (fullName) {
+            toReturn.fullName = fullName;
+        }
+        if (title) {
+            toReturn.title = title;
+        }
+        if (location) {
+            toReturn.location = location;
+        }
+        if (summary) {
+            toReturn.summary = summary;
+        }
+        return toReturn;
+    }
+    function parseProfile2(profileNode) {
+        const entityUrn = profileNode === null || profileNode === void 0 ? void 0 : profileNode.entityUrn;
+        let fsdProfile;
+        if (!entityUrn) {
+            return null;
+        }
+        const regExResult = entityUrn.match(/fsd_profile:(?<profile>(\w+))/);
+        if (regExResult && regExResult.groups && regExResult.groups['profile']) {
+            fsdProfile = regExResult.groups['profile'];
+        }
+        if (!fsdProfile) {
+            return null;
+        }
+        const toReturn = {
+            fsdProfile: fsdProfile
+        };
+        const publicIdentifier = profileNode === null || profileNode === void 0 ? void 0 : profileNode.publicIdentifier;
+        const firstName = profileNode === null || profileNode === void 0 ? void 0 : profileNode.firstName;
+        const lastName = profileNode === null || profileNode === void 0 ? void 0 : profileNode.lastName;
+        const headline = profileNode === null || profileNode === void 0 ? void 0 : profileNode.headline;
+        if (publicIdentifier) {
+            toReturn.linkedInProfileUrl = `https://www.linkedin.com/in/${publicIdentifier}`;
+        }
+        if (firstName) {
+            toReturn.firstName = firstName;
+        }
+        if (lastName) {
+            toReturn.lastName = lastName;
+        }
+        if (headline) {
+            toReturn.title = headline;
+        }
+        if (searchTerm) {
+            toReturn.searchTerm = searchTerm;
+        }
+        return toReturn;
+    }
+    profileObjs.forEach(profileNode => {
+        console.log(profileNode);
+        let profile;
+        if (isProfile1(profileNode)) {
+            profile = parseProfile1(profileNode);
+            console.log(`Profile1 ${profile.fullName} - ${profile.firstName} - ${profile.lastName}`);
+        }
+        else if (isProfile2(profileNode)) {
+            profile = parseProfile2(profileNode);
+            console.log(`Profile2 ${profile.fullName} - ${profile.firstName} - ${profile.lastName}`);
+        }
+        else {
+            throw new Error('Invalid profile');
+        }
+        if (!profile) {
+            return;
+        }
+        console.log(`fsdProfile: ${profile.fsdProfile}`);
+        const existingProfile = window.profiles_list.get(profile.fsdProfile);
+        if (existingProfile) {
+            console.log('Merge');
+            window.profiles_list.set(profile.fsdProfile, {
+                ...existingProfile,
+                ...profile
+            });
+        }
+        else {
+            window.profiles_list.set(profile.fsdProfile, profile);
+        }
     });
-    (_a = window.members_list).push.apply(_a, membersData);
     // Update member tracker counter
-    var tracker = document.getElementById('fb-group-scraper-number-tracker');
+    const tracker = document.getElementById('linkedin-scraper-number-tracker');
     if (tracker) {
-        tracker.textContent = window.members_list.length.toString();
+        const cleanMap = new Map([...window.profiles_list].filter(([k, v]) => {
+            return !!v.linkedInProfileUrl;
+        }));
+        tracker.textContent = cleanMap.size.toString();
     }
 }
 function parseResponse(dataRaw) {
-    var dataGraphQL = [];
+    // // be sure we are on search url
+    // if(window.location.pathname !== "/search/results/people/"){
+    //     return;
+    // }
+    // const keywordReg = window.location.search.match(/keywords=(?<search>.+?)(?=&)/)
+    // const keyword = keywordReg && keywordReg.groups && keywordReg.groups['search']
+    let dataGraphQL = [];
     try {
         dataGraphQL.push(JSON.parse(dataRaw));
     }
     catch (err) {
-        // Sometime Facebook return multiline response
-        var splittedData = dataRaw.split("\n");
-        // If not a multiline response
-        if (splittedData.length <= 1) {
-            console.error('Fail to parse API response', err);
-            return;
-        }
-        // Multiline response. Parse each response
-        for (var i = 0; i < splittedData.length; i++) {
-            var newDataRaw = splittedData[i];
-            try {
-                dataGraphQL.push(JSON.parse(newDataRaw));
-            }
-            catch (err2) {
-                console.error('Fail to parse API response', err);
-            }
-        }
+        console.error('Fail to parse API response', err);
     }
-    for (var j = 0; j < dataGraphQL.length; j++) {
+    for (let j = 0; j < dataGraphQL.length; j++) {
         processResponse(dataGraphQL[j]);
     }
 }
 function main() {
     buildCTABtn();
     // Watch API calls to find GraphQL responses to parse
-    var matchingUrl = '/api/graphql/';
-    var send = XMLHttpRequest.prototype.send;
+    const matchingUrl = '/voyager/api/graphql';
+    const regstart = /start:(?<start>\d+)/ig;
+    const increasePagination = 40;
+    const open = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function () {
+        var _a;
+        if (arguments[1].indexOf('/voyager/api/graphql') != -1) {
+            const newArgs = arguments;
+            const currentUrl = arguments[1];
+            regstart.lastIndex = 0;
+            const result = regstart.exec(currentUrl);
+            if (result) {
+                const currentStart = (_a = result === null || result === void 0 ? void 0 : result.groups) === null || _a === void 0 ? void 0 : _a.start;
+                if (currentStart) {
+                    const currentPage = parseInt(currentStart) / 10;
+                    const newStart = currentPage * (10 + increasePagination);
+                    newArgs[1] = currentUrl.replace(`start:${currentStart}`, `count:${10 + increasePagination},start:${newStart}`);
+                    return open.apply(this, newArgs);
+                }
+            }
+        }
+        return open.apply(this, arguments);
+    };
+    const send = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function () {
         this.addEventListener('readystatechange', function () {
             if (this.responseURL.includes(matchingUrl) && this.readyState === 4) {
-                parseResponse(this.responseText);
+                const reader = new FileReader();
+                reader.onloadend = (e) => {
+                    try {
+                        // console.log(reader.result)
+                        parseResponse(reader.result);
+                    }
+                    catch (err) {
+                        console.error(err);
+                    }
+                };
+                reader.readAsText(this.response);
             }
         }, false);
         send.apply(this, arguments);
