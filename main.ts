@@ -38,7 +38,7 @@ function exportToCsv(filename: string, rows: any[][]): void {
 
 interface LinkedInProfile {
     fsdProfile: string
-    searchTerm?: string,
+    searchTerms?: string,
     linkedInProfileUrl?: string,
     firstName?: string,
     lastName?: string,
@@ -133,9 +133,9 @@ function buildCTABtn(): HTMLElement{
 
         window.profiles_list.forEach((profile, index)=>{
             // Only keep profile with a linkedIn profile URL
-            if(profile.linkedInProfileUrl){
+            if(profile.linkedInProfileUrl && profile.searchTerms){
                 profileToArray.push([
-                    profile.searchTerm,
+                    profile.searchTerms,
                     profile.linkedInProfileUrl,
                     textOrEmpty(profile.firstName),
                     textOrEmpty(profile.lastName),
@@ -157,8 +157,10 @@ function buildCTABtn(): HTMLElement{
 }
 
 function isProfile1(entity){
+    // Only Return 
     return entity['$type'] === "com.linkedin.voyager.dash.search.EntityResultViewModel" && 
     !!entity['navigationUrl'] && entity['navigationUrl'].indexOf('linkedin.com/in/') !== -1;
+
 }
 
 function isProfile2(entity){
@@ -182,7 +184,7 @@ function findProfileUsingFSDProfile(fsdProfile: string){
     return null
 }
 
-function processResponse(dataGraphQL: any, searchTerm?: string): void{
+function processResponse(dataGraphQL: any, searchTerms?: string): void{
     // Only look for Group GraphQL responses
     let data: any;
     if(dataGraphQL?.included){
@@ -193,6 +195,7 @@ function processResponse(dataGraphQL: any, searchTerm?: string): void{
         return;
     }
 
+    // Clean some weird profile results
     const profileObjs = data.filter((entity)=>{
         return isProfile1(entity) || isProfile2(entity)
     })
@@ -236,8 +239,8 @@ function processResponse(dataGraphQL: any, searchTerm?: string): void{
             linkedInProfileUrl: cleanLinkedInUrl(profileLink),
             isPremium: isPremium
         }
-        if(searchTerm){
-            toReturn.searchTerm = searchTerm
+        if(searchTerms){
+            toReturn.searchTerms = searchTerms
         }
         if(fullName){
             toReturn.fullName = fullName;
@@ -288,8 +291,8 @@ function processResponse(dataGraphQL: any, searchTerm?: string): void{
         if(headline){
             toReturn.title = headline;
         }
-        if(searchTerm){
-            toReturn.searchTerm = searchTerm
+        if(searchTerms){
+            toReturn.searchTerms = searchTerms
         }
         
         return toReturn
@@ -299,12 +302,15 @@ function processResponse(dataGraphQL: any, searchTerm?: string): void{
     profileObjs.forEach(profileNode=>{
         console.log(profileNode)
         let profile: LinkedInProfile;
+        let requireMainProfile = false;
+
         if(isProfile1(profileNode)){
             profile = parseProfile1(profileNode)
             console.log(`Profile1 ${profile.fullName} - ${profile.firstName} - ${profile.lastName}`)
         }else if(isProfile2(profileNode)){
             profile = parseProfile2(profileNode)
             console.log(`Profile2 ${profile.fullName} - ${profile.firstName} - ${profile.lastName}`)
+            requireMainProfile = true;
         }else{
             throw new Error('Invalid profile')
         }
@@ -322,7 +328,9 @@ function processResponse(dataGraphQL: any, searchTerm?: string): void{
                 ...profile
             })
         }else{
-            window.profiles_list.set(profile.fsdProfile, profile)
+            if(!requireMainProfile){
+                window.profiles_list.set(profile.fsdProfile, profile)
+            }
         }
     })
 
@@ -330,21 +338,19 @@ function processResponse(dataGraphQL: any, searchTerm?: string): void{
     const tracker = document.getElementById('linkedin-scraper-number-tracker')
     if(tracker){
         const cleanMap = new Map([...window.profiles_list].filter(([k, v])=>{
-            return !!v.linkedInProfileUrl
+            return !!v.linkedInProfileUrl && !!v.searchTerms
         }))
         tracker.textContent = cleanMap.size.toString()
     }
 }
 
 
-function parseResponse(dataRaw: string): void{
-    // // be sure we are on search url
-    // if(window.location.pathname !== "/search/results/people/"){
-    //     return;
-    // }
-
-    // const keywordReg = window.location.search.match(/keywords=(?<search>.+?)(?=&)/)
-    // const keyword = keywordReg && keywordReg.groups && keywordReg.groups['search']
+function parseResponse(
+    dataRaw: string,
+    url: string): void
+{
+    const keywordReg = url.match(/\(keywords:(?<search_term>.+?)(?=,)/)
+    const searchTerms = keywordReg && keywordReg.groups && keywordReg.groups['search_term'] ? decodeURIComponent(keywordReg.groups['search_term']) : null;
 
     let dataGraphQL: Array<any> = [];
     try{
@@ -354,7 +360,7 @@ function parseResponse(dataRaw: string): void{
     }
 
     for(let j=0; j<dataGraphQL.length; j++){
-        processResponse(dataGraphQL[j])
+        processResponse(dataGraphQL[j], searchTerms)
     }
 }
 
@@ -368,7 +374,9 @@ function main(): void {
     
     const open = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function(){
-        if(arguments[1].indexOf('/voyager/api/graphql')!=-1){
+        const calledUrl = arguments[1]
+        // Increase count on search API call in the People tab
+        if(calledUrl.indexOf('/voyager/api/graphql')!==-1 && calledUrl.indexOf('value:List(PEOPLE)') !== -1){
             const newArgs = arguments;
             const currentUrl = arguments[1];
             regstart.lastIndex = 0;
@@ -389,17 +397,25 @@ function main(): void {
     const send = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function() {
         this.addEventListener('readystatechange', function() {
-            if (this.responseURL.includes(matchingUrl) && this.readyState === 4) {
-                const reader: FileReader = new FileReader();
-                reader.onloadend = (e) => {
-                    try{
-                        // console.log(reader.result)
-                        parseResponse(reader.result as string);
-                    }catch(err){
-                        console.error(err)
-                    }
-                };
-                reader.readAsText(this.response);
+            if(this.readyState === 4){
+                let toParse = this.responseURL.includes(matchingUrl);
+
+                // Dont parse ALL Entities search results
+                if(toParse && this.responseURL.indexOf('value:List(ALL)')!==-1){
+                    toParse = false
+                }
+                if (toParse) {
+                    const reader: FileReader = new FileReader();
+                    reader.onloadend = (e) => {
+                        try{
+                            // console.log(reader.result)
+                            parseResponse(reader.result as string, this.responseURL);
+                        }catch(err){
+                            console.error(err)
+                        }
+                    };
+                    reader.readAsText(this.response);
+                }
             }
         }, false);
         send.apply(this, arguments);

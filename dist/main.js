@@ -107,9 +107,9 @@ function buildCTABtn() {
         ;
         window.profiles_list.forEach((profile, index) => {
             // Only keep profile with a linkedIn profile URL
-            if (profile.linkedInProfileUrl) {
+            if (profile.linkedInProfileUrl && profile.searchTerms) {
                 profileToArray.push([
-                    profile.searchTerm,
+                    profile.searchTerms,
                     profile.linkedInProfileUrl,
                     textOrEmpty(profile.firstName),
                     textOrEmpty(profile.lastName),
@@ -149,7 +149,7 @@ function findProfileUsingFSDProfile(fsdProfile) {
     }
     return null;
 }
-function processResponse(dataGraphQL, searchTerm) {
+function processResponse(dataGraphQL, searchTerms) {
     // Only look for Group GraphQL responses
     let data;
     if (dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.included) {
@@ -198,8 +198,8 @@ function processResponse(dataGraphQL, searchTerm) {
             linkedInProfileUrl: cleanLinkedInUrl(profileLink),
             isPremium: isPremium
         };
-        if (searchTerm) {
-            toReturn.searchTerm = searchTerm;
+        if (searchTerms) {
+            toReturn.searchTerms = searchTerms;
         }
         if (fullName) {
             toReturn.fullName = fullName;
@@ -247,14 +247,15 @@ function processResponse(dataGraphQL, searchTerm) {
         if (headline) {
             toReturn.title = headline;
         }
-        if (searchTerm) {
-            toReturn.searchTerm = searchTerm;
+        if (searchTerms) {
+            toReturn.searchTerms = searchTerms;
         }
         return toReturn;
     }
     profileObjs.forEach(profileNode => {
         console.log(profileNode);
         let profile;
+        let requireMainProfile = false;
         if (isProfile1(profileNode)) {
             profile = parseProfile1(profileNode);
             console.log(`Profile1 ${profile.fullName} - ${profile.firstName} - ${profile.lastName}`);
@@ -262,6 +263,7 @@ function processResponse(dataGraphQL, searchTerm) {
         else if (isProfile2(profileNode)) {
             profile = parseProfile2(profileNode);
             console.log(`Profile2 ${profile.fullName} - ${profile.firstName} - ${profile.lastName}`);
+            requireMainProfile = true;
         }
         else {
             throw new Error('Invalid profile');
@@ -279,25 +281,23 @@ function processResponse(dataGraphQL, searchTerm) {
             });
         }
         else {
-            window.profiles_list.set(profile.fsdProfile, profile);
+            if (!requireMainProfile) {
+                window.profiles_list.set(profile.fsdProfile, profile);
+            }
         }
     });
     // Update member tracker counter
     const tracker = document.getElementById('linkedin-scraper-number-tracker');
     if (tracker) {
         const cleanMap = new Map([...window.profiles_list].filter(([k, v]) => {
-            return !!v.linkedInProfileUrl;
+            return !!v.linkedInProfileUrl && !!v.searchTerms;
         }));
         tracker.textContent = cleanMap.size.toString();
     }
 }
-function parseResponse(dataRaw) {
-    // // be sure we are on search url
-    // if(window.location.pathname !== "/search/results/people/"){
-    //     return;
-    // }
-    // const keywordReg = window.location.search.match(/keywords=(?<search>.+?)(?=&)/)
-    // const keyword = keywordReg && keywordReg.groups && keywordReg.groups['search']
+function parseResponse(dataRaw, url) {
+    const keywordReg = url.match(/\(keywords:(?<search_term>.+?)(?=,)/);
+    const searchTerms = keywordReg && keywordReg.groups && keywordReg.groups['search_term'] ? decodeURIComponent(keywordReg.groups['search_term']) : null;
     let dataGraphQL = [];
     try {
         dataGraphQL.push(JSON.parse(dataRaw));
@@ -306,7 +306,7 @@ function parseResponse(dataRaw) {
         console.error('Fail to parse API response', err);
     }
     for (let j = 0; j < dataGraphQL.length; j++) {
-        processResponse(dataGraphQL[j]);
+        processResponse(dataGraphQL[j], searchTerms);
     }
 }
 function main() {
@@ -318,7 +318,9 @@ function main() {
     const open = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function () {
         var _a;
-        if (arguments[1].indexOf('/voyager/api/graphql') != -1) {
+        const calledUrl = arguments[1];
+        // Increase count on search API call in the People tab
+        if (calledUrl.indexOf('/voyager/api/graphql') !== -1 && calledUrl.indexOf('value:List(PEOPLE)') !== -1) {
             const newArgs = arguments;
             const currentUrl = arguments[1];
             regstart.lastIndex = 0;
@@ -338,18 +340,25 @@ function main() {
     const send = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function () {
         this.addEventListener('readystatechange', function () {
-            if (this.responseURL.includes(matchingUrl) && this.readyState === 4) {
-                const reader = new FileReader();
-                reader.onloadend = (e) => {
-                    try {
-                        // console.log(reader.result)
-                        parseResponse(reader.result);
-                    }
-                    catch (err) {
-                        console.error(err);
-                    }
-                };
-                reader.readAsText(this.response);
+            if (this.readyState === 4) {
+                let toParse = this.responseURL.includes(matchingUrl);
+                // Dont parse ALL Entities search results
+                if (toParse && this.responseURL.indexOf('value:List(ALL)') !== -1) {
+                    toParse = false;
+                }
+                if (toParse) {
+                    const reader = new FileReader();
+                    reader.onloadend = (e) => {
+                        try {
+                            // console.log(reader.result)
+                            parseResponse(reader.result, this.responseURL);
+                        }
+                        catch (err) {
+                            console.error(err);
+                        }
+                    };
+                    reader.readAsText(this.response);
+                }
             }
         }, false);
         send.apply(this, arguments);
