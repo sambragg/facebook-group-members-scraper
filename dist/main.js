@@ -1,3 +1,4 @@
+var groupId, groupName, groupUrl;
 // Utils to export a Javascript double array into a CSV file
 function exportToCsv(filename, rows) {
     var processRow = function (row) {
@@ -40,8 +41,7 @@ window.members_list = window.members_list || [[
         'Bio',
         'Group Name',
         'Group URL',
-        'Group ID',
-        'Profile Type'
+        'Group ID'
     ]];
 // Add a Download button to export parsed member into a CSV file
 function buildCTABtn() {
@@ -85,8 +85,15 @@ function buildCTABtn() {
     btn.appendChild(numberSpan);
     btn.appendChild(memberText);
     btn.addEventListener('click', function () {
-        var timestamp = new Date().toISOString();
-        exportToCsv(timestamp.concat(" ", groupName, " (", groupId, ") ", ".csv"), window.members_list);
+        var timestamp = new Date().toISOString().replace(' ', '-');
+        window.members_list.forEach(function (v, i) {
+            if (i > 0) {
+                v[4] = groupName;
+                v[5] = groupUrl;
+                v[6] = groupId;
+            }
+        });
+        exportToCsv("".concat(timestamp, " ").concat(groupName, " (").concat(groupId, ").csv"), window.members_list);
     });
     canvas.appendChild(btn);
     document.body.appendChild(canvas);
@@ -94,11 +101,10 @@ function buildCTABtn() {
 }
 function processResponse(dataGraphQL) {
     var _a;
-    var _b = dataGraphQL;
-    var _c, _d, _e, _f, _g;
+    var _b, _c, _d, _e, _f, _g;
     // Only look for Group GraphQL responses
     var data;
-    if ((_b === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.data) === null || _b === void 0 ? void 0 : _b.group) {
+    if ((_b = dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.data) === null || _b === void 0 ? void 0 : _b.group) {
         // Initial Group members page
         data = dataGraphQL.data.group;
     }
@@ -106,12 +112,10 @@ function processResponse(dataGraphQL) {
         // New members load on scroll
         data = dataGraphQL.data.node;
     }
-    else if ((_b === null || dataGraphQL === void 0 ? void 0 : dataGraphQL) === null || _b === void 0 ? void 0 : _b.payload) {
+    else if (dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.payload) {
         // Group info
         groupName = dataGraphQL.payload.payload.result.exports.meta.title;
-        
         groupId = dataGraphQL.payload.payload.result.exports.rootView.props.groupID;
-        
         groupUrl = "https://www.facebook.com/groups/".concat(groupId);
     }
     else {
@@ -133,23 +137,16 @@ function processResponse(dataGraphQL) {
         return;
     }
     var membersData = membersEdges.map(function (memberNode) {
-        var _a, _b, _c, _d;
         // Member Data
-        var _e = memberNode.node
-        var id = _e.id 
-        var name = _e.name
-        var bio_text = _e.bio_text
-        var url = _e.url
-        var profileType = _e.__isProfile;
+        var _a = memberNode.node, id = _a.id, name = _a.name, bio_text = _a.bio_text, url = _a.url, profileType = _a.__isProfile;
         return [
             id,
             name,
             url,
             (bio_text === null || bio_text === void 0 ? void 0 : bio_text.text) || '',
-            groupName,
-            groupUrl,
-            groupId,
-            profileType
+            "groupName",
+            "groupUrl",
+            "groupId",
         ];
     });
     (_a = window.members_list).push.apply(_a, membersData);
@@ -161,7 +158,7 @@ function processResponse(dataGraphQL) {
 }
 function parseResponse(dataRaw) {
     var dataGraphQL = [];
-    dataRaw = dataRaw.replace('for (;;);', '')
+    dataRaw = dataRaw.replace('for (;;);', '');
     try {
         dataGraphQL.push(JSON.parse(dataRaw));
     }
@@ -189,9 +186,8 @@ function parseResponse(dataRaw) {
     }
 }
 function main() {
-    buildCTABtn();
-    // Watch API calls to find GraphQL responses to parse
     function responseListener(matchingUrl) {
+        // Watch API calls to find responses to parse
         var send = XMLHttpRequest.prototype.send;
         XMLHttpRequest.prototype.send = function () {
             this.addEventListener('readystatechange', function () {
@@ -202,8 +198,8 @@ function main() {
             send.apply(this, arguments);
         };
     }
-
     responseListener('ajax/navigation/');
-    responseListener('/api/graphql/');    
+    responseListener('/api/graphql/');
+    buildCTABtn();
 }
 main();

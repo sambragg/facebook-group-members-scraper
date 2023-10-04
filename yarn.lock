@@ -7,11 +7,6 @@
   resolved "https://registry.yarnpkg.com/@ikerin/build-readme/-/build-readme-1.1.1.tgz#54e5a825607020b7d957b04aa40c413150c5058d"
   integrity sha512-XXdRGsV17yy3msGOkFcGy94hPdEKv1NmK84R+akGOgBBFYdjH+Fp+YraEX6tqU8drprFsTcYe8AQ4cZVTLGrnw==
 
-jsmin@^1.0.1:
-  version "1.0.1"
-  resolved "https://registry.yarnpkg.com/jsmin/-/jsmin-1.0.1.tgz#e7bd0dcd6496c3bf4863235bf461a3d98aa3b98c"
-  integrity sha1-570NzWSWw79IYyNb9GGj2YqjuYw=
-
 typescript@^4.5.5:
   version "4.5.5"
   resolved "https://registry.yarnpkg.com/typescript/-/typescript-4.5.5.tgz#d8c953832d28924a9e3d37c73d729c846c5896f3"

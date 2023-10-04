@@ -1,3 +1,5 @@
+let groupId: string, groupName: string, groupUrl: string;
+
 // Utils to export a Javascript double array into a CSV file
 function exportToCsv(filename: string, rows: any[][]): void {
     var processRow = function (row: any[]) {
@@ -38,14 +40,13 @@ function exportToCsv(filename: string, rows: any[][]): void {
 
 declare var members_list:string[][]; // Will store facebook group members
 window.members_list = window.members_list || [[
-    'Profile Id',
+    'Profile ID',
     'Full Name',
-    'ProfileLink',
+    'Profile URL',
     'Bio',
-    'Image Src',
-    'Groupe Id',
-    'Group Joining Text',
-    'Profile Type'
+    'Group Name',
+    'Group URL',
+    'Group ID'
 ]]
 
 // Add a Download button to export parsed member into a CSV file
@@ -94,8 +95,15 @@ function buildCTABtn(): HTMLElement{
     btn.appendChild(memberText)
 
     btn.addEventListener('click', function() {
-        const timestamp = new Date().toISOString()
-        exportToCsv(`groupMemberExport-${timestamp}.csv`, window.members_list)
+        const timestamp = new Date().toISOString().replace(' ', '-')
+        window.members_list.forEach((v, i) => {
+            if(i>0){
+                v[4] = groupName;
+                v[5] = groupUrl;
+                v[6] = groupId;
+            }
+        });
+        exportToCsv(`${timestamp} ${groupName} (${groupId}).csv`, window.members_list);
     });
 
     canvas.appendChild(btn);
@@ -113,6 +121,11 @@ function processResponse(dataGraphQL: any): void{
     } else if(dataGraphQL?.data?.node?.__typename === 'Group'){
         // New members load on scroll
         data = dataGraphQL.data.node;
+    } else if(dataGraphQL?.payload) {
+        // Group info
+        groupName = dataGraphQL.payload.payload.result.exports.meta.title;
+        groupId = dataGraphQL.payload.payload.result.exports.rootView.props.groupID;
+        groupUrl = "https://www.facebook.com/groups/".concat(groupId);
     } else {
         // If no group members, return fast
         return;
@@ -137,25 +150,17 @@ function processResponse(dataGraphQL: any): void{
             name,
             bio_text,
             url,
-            profile_picture,
             __isProfile:profileType
         } = memberNode.node
-
-        // Group Joining Info
-        const joiningText = memberNode?.join_status_text?.text || memberNode?.membership?.join_status_text?.text;
-
-        // Facebook Group Id
-        const groupId = memberNode.node.group_membership?.associated_group.id
 
         return [
             id,
             name,
             url,
             bio_text?.text || '',
-            profile_picture?.uri || '',
-            groupId,
-            joiningText || '',
-            profileType
+            "groupName",
+            "groupUrl",
+            "groupId",
         ]
     })
 
@@ -168,9 +173,9 @@ function processResponse(dataGraphQL: any): void{
     }
 }
 
-
 function parseResponse(dataRaw: string): void{
     let dataGraphQL: Array<any> = [];
+    dataRaw = dataRaw.replace('for (;;);', '')
     try{
         dataGraphQL.push(JSON.parse(dataRaw))
     }catch(err){
@@ -200,19 +205,23 @@ function parseResponse(dataRaw: string): void{
 }
 
 function main(): void {
-    buildCTABtn()
+    function responseListener(matchingUrl: string): void{
+        // Watch API calls to find responses to parse
+        let send = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function() {
+            this.addEventListener('readystatechange', function() {
+                if (this.responseURL.includes(matchingUrl) && this.readyState === 4) {
+                    parseResponse(this.responseText);
+                }
+            }, false);
+            send.apply(this, arguments);
+        };
+    }
+    
+    responseListener('ajax/navigation/');
+    responseListener('/api/graphql/');
 
-    // Watch API calls to find GraphQL responses to parse
-    const matchingUrl = '/api/graphql/';
-    let send = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.send = function() {
-        this.addEventListener('readystatechange', function() {
-            if (this.responseURL.includes(matchingUrl) && this.readyState === 4) {
-                parseResponse(this.responseText);
-            }
-        }, false);
-        send.apply(this, arguments);
-    };
+    buildCTABtn()
 }
 
 main();
