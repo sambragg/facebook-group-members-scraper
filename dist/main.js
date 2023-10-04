@@ -34,13 +34,13 @@ function exportToCsv(filename, rows) {
     }
 }
 window.members_list = window.members_list || [[
-        'Profile Id',
+        'Profile ID',
         'Full Name',
-        'ProfileLink',
+        'Profile URL',
         'Bio',
-        'Image Src',
-        'Groupe Id',
-        'Group Joining Text',
+        'Group Name',
+        'Group URL',
+        'Group ID',
         'Profile Type'
     ]];
 // Add a Download button to export parsed member into a CSV file
@@ -86,7 +86,7 @@ function buildCTABtn() {
     btn.appendChild(memberText);
     btn.addEventListener('click', function () {
         var timestamp = new Date().toISOString();
-        exportToCsv("groupMemberExport-".concat(timestamp, ".csv"), window.members_list);
+        exportToCsv(timestamp.concat(" ", groupName, " (", groupId, ") ", ".csv"), window.members_list);
     });
     canvas.appendChild(btn);
     document.body.appendChild(canvas);
@@ -94,16 +94,25 @@ function buildCTABtn() {
 }
 function processResponse(dataGraphQL) {
     var _a;
-    var _b, _c, _d, _e, _f, _g;
+    var _b = dataGraphQL;
+    var _c, _d, _e, _f, _g;
     // Only look for Group GraphQL responses
     var data;
-    if ((_b = dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.data) === null || _b === void 0 ? void 0 : _b.group) {
+    if ((_b === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.data) === null || _b === void 0 ? void 0 : _b.group) {
         // Initial Group members page
         data = dataGraphQL.data.group;
     }
     else if (((_d = (_c = dataGraphQL === null || dataGraphQL === void 0 ? void 0 : dataGraphQL.data) === null || _c === void 0 ? void 0 : _c.node) === null || _d === void 0 ? void 0 : _d.__typename) === 'Group') {
         // New members load on scroll
         data = dataGraphQL.data.node;
+    }
+    else if ((_b === null || dataGraphQL === void 0 ? void 0 : dataGraphQL) === null || _b === void 0 ? void 0 : _b.payload) {
+        // Group info
+        groupName = dataGraphQL.payload.payload.result.exports.meta.title;
+        
+        groupId = dataGraphQL.payload.payload.result.exports.rootView.props.groupID;
+        
+        groupUrl = "https://www.facebook.com/groups/".concat(groupId);
     }
     else {
         // If no group members, return fast
@@ -126,19 +135,20 @@ function processResponse(dataGraphQL) {
     var membersData = membersEdges.map(function (memberNode) {
         var _a, _b, _c, _d;
         // Member Data
-        var _e = memberNode.node, id = _e.id, name = _e.name, bio_text = _e.bio_text, url = _e.url, profile_picture = _e.profile_picture, profileType = _e.__isProfile;
-        // Group Joining Info
-        var joiningText = ((_a = memberNode === null || memberNode === void 0 ? void 0 : memberNode.join_status_text) === null || _a === void 0 ? void 0 : _a.text) || ((_c = (_b = memberNode === null || memberNode === void 0 ? void 0 : memberNode.membership) === null || _b === void 0 ? void 0 : _b.join_status_text) === null || _c === void 0 ? void 0 : _c.text);
-        // Facebook Group Id
-        var groupId = (_d = memberNode.node.group_membership) === null || _d === void 0 ? void 0 : _d.associated_group.id;
+        var _e = memberNode.node
+        var id = _e.id 
+        var name = _e.name
+        var bio_text = _e.bio_text
+        var url = _e.url
+        var profileType = _e.__isProfile;
         return [
             id,
             name,
             url,
             (bio_text === null || bio_text === void 0 ? void 0 : bio_text.text) || '',
-            (profile_picture === null || profile_picture === void 0 ? void 0 : profile_picture.uri) || '',
+            groupName,
+            groupUrl,
             groupId,
-            joiningText || '',
             profileType
         ];
     });
@@ -151,6 +161,7 @@ function processResponse(dataGraphQL) {
 }
 function parseResponse(dataRaw) {
     var dataGraphQL = [];
+    dataRaw = dataRaw.replace('for (;;);', '')
     try {
         dataGraphQL.push(JSON.parse(dataRaw));
     }
@@ -180,15 +191,19 @@ function parseResponse(dataRaw) {
 function main() {
     buildCTABtn();
     // Watch API calls to find GraphQL responses to parse
-    var matchingUrl = '/api/graphql/';
-    var send = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.send = function () {
-        this.addEventListener('readystatechange', function () {
-            if (this.responseURL.includes(matchingUrl) && this.readyState === 4) {
-                parseResponse(this.responseText);
-            }
-        }, false);
-        send.apply(this, arguments);
-    };
+    function responseListener(matchingUrl) {
+        var send = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function () {
+            this.addEventListener('readystatechange', function () {
+                if (this.responseURL.includes(matchingUrl) && this.readyState === 4) {
+                    parseResponse(this.responseText);
+                }
+            }, false);
+            send.apply(this, arguments);
+        };
+    }
+
+    responseListener('ajax/navigation/');
+    responseListener('/api/graphql/');    
 }
 main();
