@@ -1,5 +1,4 @@
-let groupId: string, groupName: string, groupUrl: string;
-
+let groupName: string
 // Utils to export a Javascript double array into a CSV file
 function exportToCsv(filename: string, rows: any[][]): void {
     var processRow = function (row: any[]) {
@@ -44,9 +43,10 @@ window.members_list = window.members_list || [[
     'Full Name',
     'Profile URL',
     'Bio',
+    'Joining Text',
     'Group Name',
-    'Group URL',
-    'Group ID'
+    'Group ID',
+    'Created at'
 ]]
 
 // Add a Download button to export parsed member into a CSV file
@@ -95,15 +95,9 @@ function buildCTABtn(): HTMLElement{
     btn.appendChild(memberText)
 
     btn.addEventListener('click', function() {
-        const timestamp = new Date().toISOString().replace(' ', '-')
-        window.members_list.forEach((v, i) => {
-            if(i>0){
-                v[4] = groupName;
-                v[5] = groupUrl;
-                v[6] = groupId;
-            }
-        });
-        exportToCsv(`${timestamp} ${groupName} (${groupId}).csv`, window.members_list);
+        const timestamp = new Date().toISOString()
+        exportToCsv(`${timestamp} groupMemberExport.csv`, window.members_list)
+
     });
 
     canvas.appendChild(btn);
@@ -153,14 +147,21 @@ function processResponse(dataGraphQL: any): void{
             __isProfile:profileType
         } = memberNode.node
 
+        // Group Joining Info
+        const joiningText = memberNode?.join_status_text?.text || memberNode?.membership?.join_status_text?.text;
+
+        // Facebook Group Info
+        const groupId = memberNode.node.group_membership?.associated_group.id
+
         return [
             id,
             name,
             url,
             bio_text?.text || '',
-            "groupName",
-            "groupUrl",
-            "groupId",
+            joiningText || '',
+            groupName || '',
+            groupId,
+            new Date().toISOString()
         ]
     })
 
@@ -223,7 +224,7 @@ function main(): void {
         };
     }
     
-    responseListener('ajax/navigation/');
+    responseListener('/ajax/navigation/');
     responseListener('/api/graphql/');
 
     buildCTABtn()
