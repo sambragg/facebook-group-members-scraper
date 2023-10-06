@@ -204,6 +204,10 @@ function parseResponse(dataRaw: string): void{
     }
 }
 
+function autoScrollDown() {
+    window.scrollTo(0,document.body.scrollHeight);
+}
+
 function main(): void {
     function responseListener(matchingUrl: string): void{
         // Watch API calls to find responses to parse
@@ -212,6 +216,7 @@ function main(): void {
             this.addEventListener('readystatechange', function() {
                 if (this.responseURL.includes(matchingUrl) && this.readyState === 4) {
                     parseResponse(this.responseText);
+                    const scroller = setInterval(autoScrollDown,500);
                 }
             }, false);
             send.apply(this, arguments);
@@ -225,3 +230,5 @@ function main(): void {
 }
 
 main();
+console.info('Script loaded successfully!')
+console.info('To stop the auto-scrolling, paste this into the console: javascript:clearInterval(scroller)')
