@@ -118,8 +118,6 @@ function processResponse(dataGraphQL: any): void{
     } else if(dataGraphQL?.payload) {
         // Group info
         groupName = dataGraphQL.payload.payload.result.exports.meta.title;
-        groupId = dataGraphQL.payload.payload.result.exports.rootView.props.groupID;
-        groupUrl = "https://www.facebook.com/groups/".concat(groupId);
     } else {
         // If no group members, return fast
         return;
